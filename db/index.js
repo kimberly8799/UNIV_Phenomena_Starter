@@ -1,8 +1,11 @@
 // Require the Client constructor from the pg package
+const { Client } = require('pg');
 
 // Create a constant, CONNECTION_STRING, from either process.env.DATABASE_URL or postgres://localhost:5432/phenomena-dev
-
 // Create the client using new Client(CONNECTION_STRING)
+const CONNECTION_STRING = process.env.DATABASE_URL
+const client = new Client(CONNECTION_STRING);
+
 // Do not connect to the client in this file!
 
 /**
@@ -20,23 +23,45 @@
 async function getOpenReports() {
   try {
     // first load all of the reports which are open
-    
+    const { rows: reports } = await client.query(`
+      SELECT *
+      FROM reports
+      WHERE "isOpen"=true;
+    `);
 
+    const reportId = reports.map(
+      (report) => (report.id)).join(', ');
+    
     // then load the comments only for those reports, using a
     // WHERE "reportId" IN () clause
-
+    const { rows: comments } = await client.query(`
+      SELECT * 
+      FROM comments
+      WHERE "reportId" IN (${reportId});
+    `);
     
+
     // then, build two new properties on each report:
     // .comments for the comments which go with it
     //    it should be an array, even if there are none
     // .isExpired if the expiration date is before now
     //    you can use Date.parse(report.expirationDate) < new Date()
     // also, remove the password from all reports
-
+    for (let i = 0; i < reports.length; i++) {
+      delete reports[i].password;
+      reports[i].comments = comments;
+      
+      if (Date.parse(reports[i].expirationDate) < new Date()) {
+        reports[i].isExpired = true;
+      } else {
+        reports[i].isExpired = false;
+      }
+    }
+    //delete reports
 
     // finally, return the reports
   
-
+    return reports;
   } catch (error) {
     throw error;
   }
@@ -55,19 +80,30 @@ async function getOpenReports() {
  */
 async function createReport(reportFields) {
   // Get all of the fields from the passed in object
+  const { 
+    title, 
+    location, 
+    description,
+    password
+  } = reportFields
 
 
   try {
+    const { rows: [ reports ] } = await client.query(`
+      INSERT INTO reports ( title, location, description, password )
+      VALUES ($1, $2, $3, $4)
+      RETURNING *;
+    `, [ title, location, description, password ])
+
+    delete reports.password;
     // insert the correct fields into the reports table
     // remember to return the new row from the query
     
-
     // remove the password from the returned row
-    
-
+  
     // return the new report
     
-
+    return reports
   } catch (error) {
     throw error;
   }
@@ -178,3 +214,11 @@ async function createReportComment(reportId, commentFields) {
 }
 
 // export the client and all database functions below
+module.exports = {
+  client,
+  getOpenReports,
+  createReport,
+  _getReport,
+  closeReport,
+  createReportComment
+}
